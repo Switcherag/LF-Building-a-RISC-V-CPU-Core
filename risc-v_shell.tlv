@@ -52,6 +52,7 @@
    $pc[31:0] = >>1$next_pc[31:0];
    $next_pc[31:0] = $reset ? 0 :
                     $taken_br ? $pc + $imm :
+                    $is_j_instr ? $j_tgt_pc :
                     $pc[31:0] + 32'h4;
                     
   
@@ -113,9 +114,9 @@
    // decode
    $dec_bits[10:0] = {$instr[30],$funct3,$opcode};
    
-   $is_lui = $dec_bits ==? 11'bx_011_0110111;
-   $is_auipc = $dec_bits ==? 11'bx_001_0110111;
-   $is_jal = $dec_bits ==? 11'bx_110_1101111;   
+   $is_lui = $dec_bits ==? 11'bx_xxx_0110111;
+   $is_auipc = $dec_bits ==? 11'bx_xxx_0010111;
+   $is_jal = $dec_bits ==? 11'bx_xxx_1101111;   
    $is_jalr = $dec_bits ==? 11'bx_000_1100111;
 
    $is_beq = $dec_bits ==? 11'bx_000_1100011;
@@ -151,15 +152,56 @@
    
    `BOGUS_USE($is_beq $is_bne $is_blt $is_bge $is_bltu $is_bgeu $is_addi $is_add)
    `BOGUS_USE($is_sub $is_sll $is_slt $is_sltu $is_xor $is_srl $is_sra $is_or $is_and $is_load)
+   `BOGUS_USE($is_lui $is_auipc $is_jal $is_jalr $ld_data)
+   `BOGUS_USE($is_slti $is_sltiu $is_xori $is_ori $is_andi $is_slli $is_srli $is_srai)
    // ALU
  
    $is_rd_x0 = $rd ==? 5'b0;
-  
-   $result[31:0] =
-    $is_rd_x0 ? 32'b0 :
-    $is_addi ? $src1_value + $imm :
-    $is_add ? $src1_value + $src2_value:
-               32'b0; 
+   $sext_src1[63:0] = { {32{$src1_value[31]}}, $src1_value };
+   $sra_rslt[63:0] = $sext_src1 >> $src2_value[4:0];
+   $srai_rslt[63:0] = $sext_src1 >> $imm[4:0];
+   $sltu_rslt[31:0] = {31'b0, $src1_value < $src2_value};
+   $sltiu_rslt[31:0] = {31'b0, $src1_value < $imm};
+   
+   $pre_result[31:0] =
+      $is_rd_x0 ? 32'b0 :
+      $is_addi ? ($src1_value + $imm) :
+      $is_add ? $src1_value + $src2_value :
+      
+      $is_sltu ? {31'b0, $src1_value < $src2_value} :
+      $is_sltiu ? {31'b0, $src1_value < $imm} :
+      
+      $is_sra ? $sra_rslt[31:0] :
+      $is_srai ? $srai_rslt[31:0] :
+
+      $is_andi ? $src1_value & $imm :
+      $is_and ? $src1_value & $src2_value :
+      $is_ori ? $src1_value | $imm :
+      $is_or ? $src1_value | $src2_value :
+      $is_xori ? $src1_value ^ $imm :
+      $is_xor ? $src1_value ^ $src2_value :
+      $is_slli ? $src1_value << $imm[5:0] :
+      $is_sll ? $src1_value << $src2_value[4:0] :
+      $is_srli ? $src1_value >> $imm[5:0] :
+      $is_srl ? $src1_value >> $src2_value[4:0] :
+      $is_sub ? $src1_value - $src2_value :
+      
+      $is_lui ? {$imm[31:12], 12'b0} :
+      $is_auipc ? $pc + $imm :
+      $is_jal ? $pc + 32'd4 :
+      $is_jalr ? $pc + 32'd4 :
+      
+      $is_slt ? (($src1_value[31] == $imm[31]) ? 
+                     $sltu_rslt :
+                        {31'b0, $src1_value[31]} ) :
+      
+      $is_slti ? (($src1_value[31] == $imm[31]) ? 
+                     $sltiu_rslt :
+                        {31'b0, $src1_value[31]} ) :
+      $is_load ? $src1_value + $imm :
+      $is_s_instr ? $src1_value + $imm :
+               32'b0;
+            
                
    $taken_br = $is_b_instr ? (
       $is_beq ? $src1_value == $src2_value :
@@ -170,13 +212,19 @@
       $is_bgeu ? $src1_value >= $src2_value :
                  1'b0 ) :  1'b0; 
       
-      
+   $j_tgt_pc[31:0] = $is_jal ? $pc + $imm : 
+                $is_jalr ? $src1_value + $imm :
+                32'b0;
+   //multiplex
+   $result[31:0] = $is_load ? $ld_data : $pre_result;
    // Assert these to end simulation (before Makerchip cycle limit).
    m4+tb()
    *failed = *cyc_cnt > M4_MAX_CYC;
    
    m4+rf(32, 32, $reset, $rd_valid, $rd[4:0], $result[31:0], $rs1_valid, $rs1[4:0], $src1_value, $rs2_valid, $rs2[4:0], $src2_value)
-   //m4+dmem(32, 32, $reset, $addr[4:0], $wr_en, $wr_data[31:0], $rd_en, $rd_data)
+   m4+dmem(32, 32, $reset, $pre_result[4:0], $is_s_instr, $src2_value[31:0], $is_load, $ld_data)
+ 
+
    m4+cpu_viz()
 \SV
    endmodule
