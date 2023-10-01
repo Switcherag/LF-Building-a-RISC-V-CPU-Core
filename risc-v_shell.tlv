@@ -20,8 +20,8 @@
    //  x13 (a3): 1..10
    //  x14 (a4): Sum
    // 
-   //m4_asm(ADDI, x14, x0, 0)             // Initialize sum register a4 with 0
-   //m4_asm(ADDI, x12, x0, 1010)          // Store count of 10 in register a2.
+   //m4_asm(ADDI, x12, x0, 5)             // Initialize sum register a4 with 0
+   //m4_asm(SW, x12, x0, 10)          // Store count of 10 in register a2.
    //m4_asm(ADDI, x13, x0, 1)             // Initialize loop count register a3 with 0
    // Loop:
    //m4_asm(ADD, x14, x13, x14)           // Incremental summation
@@ -198,6 +198,7 @@
       $is_slti ? (($src1_value[31] == $imm[31]) ? 
                      $sltiu_rslt :
                         {31'b0, $src1_value[31]} ) :
+                        
       $is_load ? $src1_value + $imm :
       $is_s_instr ? $src1_value + $imm :
                32'b0;
@@ -222,7 +223,7 @@
    *failed = *cyc_cnt > M4_MAX_CYC;
    
    m4+rf(32, 32, $reset, $rd_valid, $rd[4:0], $result[31:0], $rs1_valid, $rs1[4:0], $src1_value, $rs2_valid, $rs2[4:0], $src2_value)
-   m4+dmem(32, 32, $reset, $pre_result[4:0], $is_s_instr, $src2_value[31:0], $is_load, $ld_data)
+   m4+dmem(32, 32, $reset, $pre_result, $is_s_instr, $src2_value[31:0], $is_load, $ld_data)
  
 
    m4+cpu_viz()
